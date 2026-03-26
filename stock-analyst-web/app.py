@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import google.generativeai as genai
+from openai import OpenAI
 
 # 載入環境變數
 load_dotenv()
@@ -19,12 +19,16 @@ if not os.path.exists("static"):
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# 取得 Zeabur 提供的 AI API Key
+ZEABUR_AI_API_KEY = os.getenv("ZEABUR_AI_API_KEY")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # 使用推薦的 Flash 模型
-    model = genai.GenerativeModel('gemini-2.0-flash')
+client = None
+if ZEABUR_AI_API_KEY:
+    # 透過 Zeabur AI Gateway 呼叫 OpenAI 模型
+    client = OpenAI(
+        api_key=ZEABUR_AI_API_KEY,
+        base_url="https://gateway.zeabur.com/ai"
+    )
 
 class AnalyzeRequest(BaseModel):
     ticker: str
@@ -57,8 +61,8 @@ def serve_frontend():
 
 @app.post("/api/analyze")
 def analyze_stock(req: AnalyzeRequest):
-    if not BRAVE_API_KEY or not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查環境變數。")
+    if not BRAVE_API_KEY or not ZEABUR_AI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
     keyword = req.ticker
     
@@ -130,8 +134,15 @@ def analyze_stock(req: AnalyzeRequest):
     final_prompt = prompt_template.format(context=full_search_context)
     
     try:
-        response = model.generate_content(final_prompt)
-        return {"markdown": response.text}
+        # 使用 OpenAI GPT-4o-mini 模型
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": final_prompt}
+            ],
+            temperature=0.7
+        )
+        return {"markdown": response.choices[0].message.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
