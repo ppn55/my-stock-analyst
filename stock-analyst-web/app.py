@@ -38,7 +38,6 @@ def get_brave_search_results(query: str):
     url = "https://api.search.brave.com/res/v1/web/search"
     headers = {
         "Accept": "application/json",
-        "Accept-Encoding": "gzip",
         "X-Subscription-Token": BRAVE_API_KEY
     }
     params = {"q": query, "count": 5, "search_lang": "zh-tw"}
