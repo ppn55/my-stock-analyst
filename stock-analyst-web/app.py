@@ -89,6 +89,7 @@ def analyze_stock(req: AnalyzeRequest):
     # AI 報告模板 Prompt
     prompt_template = """
     您是一位專業且極具獨立批判性的資深台股分析師。請主要依據「網路搜尋資料」來評估該公司的商業模式、近期轉型與最新動態。
+    優先搜尋網站：鉅亨網https://www.cnyes.com/、工商時報https://www.ctee.com.tw/、經濟日報https://money.udn.com/、Yahoo股市https://finance.yahoo.com/tw/、公開資訊觀測站https://mops.twse.com.tw/mops/#/web/home
     對於近期的股價、籌碼、重大新聞與「最新的商業模式 / 轉投資領域」，請務必嚴格依照搜尋結果填寫，切勿僅依賴舊知識（特別注意公司是否已跨足新產業，例如無人機、AI、半導體等）。
     只有在 2021-2023 年之前的歷史財報數據確實查不到時，才可運用您的內建知識庫補齊。
     若各界資料都完全找不到，才可標示「資訊不足」。
