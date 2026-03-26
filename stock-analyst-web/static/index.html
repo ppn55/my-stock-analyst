@@ -127,6 +127,29 @@
             background: rgba(99, 102, 241, 0.1); 
             color: #c084fc;
         }
+
+        /* 手機版響應式排版 (RWD) */
+        @media (max-width: 600px) {
+            body {
+                padding: 1rem;
+            }
+            .glass-panel {
+                padding: 1.5rem 1rem;
+            }
+            h1 {
+                font-size: 1.5rem;
+                flex-direction: column;
+                gap: 8px !important;
+            }
+            .input-group {
+                flex-direction: column;
+                gap: 0.8rem;
+            }
+            button {
+                width: 100%;
+                padding: 1rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -136,7 +159,7 @@
                 <img src="/static/頭像5.png" alt="我的頭像" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
                 AI 台股分析師 v2.0
             </h1>
-            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過 open AI 產出專業研究報告。</p>
+            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過OPEN AI 產出專業研究報告。</p>
             <div class="input-group">
                 <input type="text" id="ticker" placeholder="例如：3481 或 台積電 2330" autocomplete="off">
                 <button id="analyze-btn" onclick="analyzeStock()">開始分析</button>
