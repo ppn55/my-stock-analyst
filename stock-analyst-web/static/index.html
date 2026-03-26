@@ -171,11 +171,18 @@
         </div>
         
         <div class="glass-panel markdown-body" id="result-container">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
+                <button onclick="downloadReport('html')" style="background: var(--primary); border: 1px solid var(--primary); color: white; padding: 0.5rem 1rem; font-size: 0.9rem; transition: all 0.2s; width: auto;" onmouseover="this.style.background='#4f46e5'" onmouseout="this.style.background='var(--primary)'">
+                    📥 下載報告 (.html)
+                </button>
+            </div>
             <div id="markdown-content"></div>
         </div>
     </div>
 
     <script>
+        let currentMarkdown = "";
+
         async function analyzeStock() {
             const ticker = document.getElementById('ticker').value.trim();
             if (!ticker) return;
@@ -191,6 +198,7 @@
             statusText.style.display = 'block';
             resultContainer.style.display = 'none';
             content.innerHTML = '';
+            currentMarkdown = '';
             
             try {
                 const response = await fetch('/api/analyze', {
@@ -206,6 +214,7 @@
                 }
                 
                 resultContainer.style.display = 'block';
+                currentMarkdown = data.markdown;
                 content.innerHTML = marked.parse(data.markdown);
             } catch (err) {
                 alert('分析失敗: ' + err.message);
@@ -217,6 +226,38 @@
             }
         }
         
+        function downloadReport(format) {
+            if (!currentMarkdown) return;
+            const ticker = document.getElementById('ticker').value.trim() || '分析報告';
+            const dateStr = new Date().toISOString().split('T')[0];
+            const contentDiv = document.getElementById('markdown-content');
+            
+            let fileContent = '';
+            let mimeType = '';
+            let filename = `${ticker}_AI研究報告_${dateStr}`;
+            
+            if (format === 'md') {
+                fileContent = currentMarkdown;
+                mimeType = 'text/markdown;charset=utf-8;';
+                filename += '.md';
+            } else if (format === 'html') {
+                // 自動轉為適合手機與電腦閱讀的乾淨版 HTML
+                fileContent = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${ticker} 分析報告</title><style>body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; background: #fff;} h3 { color: #4f46e5; border-bottom: 2px solid #efefef; padding-bottom: 8px; margin-top: 24px; } table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; } th { background: #f8fafc; color: #333; }</style></head><body>${contentDiv.innerHTML}</body></html>`;
+                mimeType = 'text/html;charset=utf-8;';
+                filename += '.html';
+            }
+            
+            const blob = new Blob([fileContent], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
         // 按下 Enter 觸發搜尋
         document.getElementById('ticker').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') analyzeStock();
