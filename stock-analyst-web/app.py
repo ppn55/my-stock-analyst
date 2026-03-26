@@ -159,6 +159,10 @@ def analyze_stock(req: AnalyzeRequest):
     
     **長期評級：[買進/持有/賣出/觀望]**
     - 理由點評：
+    
+    ---
+    **【投資警語】**
+    *本報告由 AI 自動彙整網路資訊生成，僅供研究參考之用，不構成任何形式的投資建議、勸誘、推薦、要約或指導。投資行為具有風險，閣下應審慎評估並自負投資損益，本系統不保證資訊之絕對正確性與即時性。*
     """
     final_prompt = prompt_template.format(
         context=full_search_context, 
