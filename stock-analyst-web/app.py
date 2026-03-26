@@ -1,5 +1,6 @@
 import os
 import requests
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,11 +65,14 @@ def analyze_stock(req: AnalyzeRequest):
         raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
     keyword = req.ticker
+    today_date = datetime.now().strftime("%Y-%m-%d")
     
     # 組合多個關鍵字確保擷取全面數據
     queries = [
         f"現價 市值 台股 {keyword} 2026",
         f"最新財報 EPS 毛利率 台股 {keyword} 2026",
+        f"近5年 配股配息 殖利率 台股 {keyword}",
+        f"近一個月 最新動態 重大新聞 鉅亨網 經濟日報 工商時報 Yahoo股市 台股 {keyword} 2026",
         f"技術面 均線 RSI 支撐壓力 台股 {keyword} 2026",
         f"外資買賣超 融資餘額 台股 {keyword} 2026"
     ]
@@ -85,53 +89,60 @@ def analyze_stock(req: AnalyzeRequest):
     若各界資料都完全找不到，才可標示「資訊不足」。
     
     【搜尋資料】：
+    (資料日期：{date})
     {context}
     
-    【報告格式要求 (嚴格遵守完整 10 大區塊與 Markdown 語法，請畫表格)】：
+    【報告格式要求 (嚴格遵守完整 11 大區塊與 Markdown 語法，請畫表格)】：
     ### 1. 基本資訊
     股票：[代號] [名稱] | 產業：[產業]
     現價：[價格]元 | 市值：[市值]
+    資料日期：{date}
     
     ### 2. 執行摘要
     - **論點**：說明看好/看淡理由
     - **評級**：短期/中期/長期  買進/持有/觀望
     - **目標價**：[低]–[高]元
     
-    ### 3. 公司產業
+    ### 3. 公司產業與最新動態
     - 商業模式、主要客戶、競爭者
     - 產業週期：衰退/復甦/成長/高峰
+    - **近期新聞**：摘要近一個月的重大消息與營運影響
     
     ### 4. 財務表（3年）
     | 年 | 營收 | 毛利% | EPS |
-    觀察：成長性、獲利品質、配息
+    觀察：成長性與獲利品質
     
-    ### 5.估值
+    ### 5. 配股配息與殖利率（近5年）
+    | 年度 | 現金股利 | 股票股利 | 殖利率 |
+    觀察：配發穩定性與近期殖利率水準
+    
+    ### 6. 估值
     同業平均 P/E 或 P/B，本公司評價
     
-    ### 6. 技術面
+    ### 7. 技術面
     - MA：均線排列
     - RSI：
     - 支撐：[S1]、壓力：[R1]
     
-    ### 7. 籌碼
+    ### 8. 籌碼
     - 外資：
     - 融資：
       
-    ### 8. 交易計畫
+    ### 9. 交易計畫
     - **買點**：
     - **停損**：
     - **目標**：
     
-    ### 9. 風險（前3）
+    ### 10. 風險（前3）
     | 風險 | 機率 | 影響 | 對策 |
     
-    ### 10. 結論
+    ### 11. 結論
     **短線：[買進/持有/賣出/觀望]**  
     **波段：[買進/持有/賣出/觀望]**  
     **長期：[買進/持有/賣出/觀望]**
     """
     
-    final_prompt = prompt_template.format(context=full_search_context)
+    final_prompt = prompt_template.format(context=full_search_context, date=today_date)
     
     try:
         # 使用 OpenAI GPT-4o-mini 模型
