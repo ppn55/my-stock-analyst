@@ -27,7 +27,7 @@ if ZEABUR_AI_API_KEY:
     # 透過 Zeabur AI Gateway 呼叫 OpenAI 模型
     client = OpenAI(
         api_key=ZEABUR_AI_API_KEY,
-        base_url="https://gateway.zeabur.com/ai"
+        base_url="https://hnd1.aihub.zeabur.ai/"
     )
 
 class AnalyzeRequest(BaseModel):
