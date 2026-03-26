@@ -66,6 +66,9 @@ def analyze_stock(req: AnalyzeRequest):
         
     keyword = req.ticker
     today_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
+    past_5_yr_start = current_year - 5
+    past_5_yr_end = current_year - 1
     
     # 組合多個關鍵字確保擷取全面數據
     queries = [
@@ -90,6 +93,9 @@ def analyze_stock(req: AnalyzeRequest):
     只有在 2021-2023 年之前的歷史財報數據確實查不到時，才可運用您的內建知識庫補齊。
     若各界資料都完全找不到，才可標示「資訊不足」。
     
+    【時間基準提醒】
+    本報告產出時間為 {current_year} 年。因此「近 5 年」的財報與股利數據，必須嚴格鎖定在 {past_5_yr_start} 年至 {past_5_yr_end} 年，絕對不可拿 2020 年以前的舊資料充數！若缺乏最新年度數據，請標註「資訊不足」或「預估」。
+    
     【極為重要：投資評級必須客觀、無私且具備批判性】
     身為專業分析師，請絕對不要有「預設看多」或「避諱給出負面評價」的 AI 包袱！如果發現營收衰退、毛利下滑、技術線型轉弱（如跌破重要支撐），或是有負面重大新聞、外資連日賣超，請毫不猶豫地在第 11 項結論中給出「賣出」建議。請展現真實華爾街分析師的冷酷與客觀。
     
@@ -112,11 +118,11 @@ def analyze_stock(req: AnalyzeRequest):
     - 產業週期：衰退/復甦/成長/高峰
     - **近期新聞**：摘要近一個月的重大消息與營運影響
     
-    ### 4. 財務表（近5年）
+    ### 4. 財務表（近5年：{past_5_yr_start}~{past_5_yr_end}）
     | 年度 | 營收 | 毛利% | EPS |
     觀察：近5年成長趨勢與獲利品質變化
     
-    ### 5. 配股配息與殖利率（近5年）
+    ### 5. 配股配息與殖利率（近5年：{past_5_yr_start}~{past_5_yr_end}）
     | 年度 | 現金股利 | 股票股利 | 殖利率 |
     觀察：配發穩定性與近期殖利率水準
     
@@ -153,8 +159,13 @@ def analyze_stock(req: AnalyzeRequest):
     **長期評級：[買進/持有/賣出/觀望]**
     - 理由點評：
     """
-    
-    final_prompt = prompt_template.format(context=full_search_context, date=today_date)
+    final_prompt = prompt_template.format(
+        context=full_search_context, 
+        date=today_date,
+        current_year=current_year,
+        past_5_yr_start=past_5_yr_start,
+        past_5_yr_end=past_5_yr_end
+    )
     
     try:
         # 使用 OpenAI GPT-4o-mini 模型
