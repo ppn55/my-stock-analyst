@@ -40,7 +40,7 @@ def get_brave_search_results(query: str):
         "Accept": "application/json",
         "X-Subscription-Token": BRAVE_API_KEY
     }
-    params = {"q": query, "count": 5, "search_lang": "zh-tw"}
+    params = {"q": query, "count": 5, "search_lang": "zh-hant"}
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
