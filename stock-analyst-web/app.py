@@ -94,7 +94,7 @@ def analyze_stock(req: AnalyzeRequest):
     
     ### 2. 執行摘要
     - **論點**：說明看好/看淡理由
-    - **評級**：短期/中期/長期 BUY/HOLD/AVOID
+    - **評級**：短期/中期/長期  買進/持有/觀望
     - **目標價**：[低]–[高]元
     
     ### 3. 公司產業
@@ -126,9 +126,9 @@ def analyze_stock(req: AnalyzeRequest):
     | 風險 | 機率 | 影響 | 對策 |
     
     ### 10. 結論
-    **短線：[BUY/HOLD/SELL]**  
-    **波段：[BUY/HOLD/SELL]**  
-    **長期：[BUY/HOLD/SELL]**
+    **短線：[買進/持有/賣出/觀望]**  
+    **波段：[買進/持有/賣出/觀望]**  
+    **長期：[買進/持有/賣出/觀望]**
     """
     
     final_prompt = prompt_template.format(context=full_search_context)
