@@ -45,6 +45,7 @@
             font-weight: 600;
             background: linear-gradient(135deg, #818cf8, #c084fc);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         .input-group {
@@ -159,7 +160,7 @@
                 <img src="/static/頭像5.png" alt="我的頭像" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
                 AI 台股分析師 v2.0
             </h1>
-            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過OPEN AI 產出專業研究報告。</p>
+            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過 openAI 產出專業研究報告。</p>
             <div class="input-group">
                 <input type="text" id="ticker" placeholder="例如：3481 或 台積電 2330" autocomplete="off">
                 <button id="analyze-btn" onclick="analyzeStock()">開始分析</button>
@@ -171,12 +172,14 @@
         </div>
         
         <div class="glass-panel markdown-body" id="result-container">
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 1rem;">
-                <button onclick="downloadReport('html')" style="background: var(--primary); border: 1px solid var(--primary); color: white; padding: 0.5rem 1rem; font-size: 0.9rem; transition: all 0.2s; width: auto;" onmouseover="this.style.background='#4f46e5'" onmouseout="this.style.background='var(--primary)'">
-                    📥 下載報告 (.html)
-                </button>
-            </div>
             <div id="markdown-content"></div>
+        </div>
+        
+        <!-- 下載區塊加在最底部 -->
+        <div id="download-area" style="display: none; justify-content: center; margin-bottom: 3rem;">
+            <button onclick="downloadReport('html')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
+                📥 下載專屬 AI 研究報告 (.html)
+            </button>
         </div>
     </div>
 
@@ -197,6 +200,7 @@
             loader.style.display = 'block';
             statusText.style.display = 'block';
             resultContainer.style.display = 'none';
+            document.getElementById('download-area').style.display = 'none';
             content.innerHTML = '';
             currentMarkdown = '';
             
@@ -214,6 +218,7 @@
                 }
                 
                 resultContainer.style.display = 'block';
+                document.getElementById('download-area').style.display = 'flex';
                 currentMarkdown = data.markdown;
                 content.innerHTML = marked.parse(data.markdown);
             } catch (err) {
