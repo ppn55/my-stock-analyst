@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 台股分析師 - 專業研報生成系統</title>
+    <!-- 引入 marked.js 解析 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f111a;
+            --surface: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.1);
+            --primary: #6366f1;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+        body {
+            font-family: 'Inter', "PingFang TC", "Microsoft JhengHei", sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+        }
+        .glass-panel {
+            background: var(--surface);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            margin-bottom: 2rem;
+        }
+        h1 {
+            margin-top: 0;
+            font-weight: 600;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .input-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        input {
+            flex: 1;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 0.8rem 1.2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .loader {
+            display: none;
+            margin: 2rem auto;
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        #result-container {
+            display: none;
+            line-height: 1.6;
+        }
+        
+        /* Markdown 自動生成的表格樣式 */
+        .markdown-body h3 { 
+            color: #818cf8; 
+            margin-top: 2rem; 
+            border-bottom: 1px solid var(--border); 
+            padding-bottom: 0.5rem;
+        }
+        .markdown-body table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 1rem 0; 
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .markdown-body th, .markdown-body td { 
+            border: 1px solid var(--border); 
+            padding: 0.8rem; 
+            text-align: left; 
+        }
+        .markdown-body th { 
+            background: rgba(99, 102, 241, 0.1); 
+            color: #c084fc;
+        }
+
+        /* 手機版響應式排版 (RWD) */
+        @media (max-width: 600px) {
+            body {
+                padding: 1rem;
+            }
+            .glass-panel {
+                padding: 1.5rem 1rem;
+            }
+            h1 {
+                font-size: 1.5rem;
+                flex-direction: column;
+                gap: 8px !important;
+            }
+            .input-group {
+                flex-direction: column;
+                gap: 0.8rem;
+            }
+            button {
+                width: 100%;
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="glass-panel" style="text-align: center;">
+            <h1 style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                <img src="/static/頭像5.png" alt="我的頭像" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
+                AI 台股分析師 v2.0
+            </h1>
+            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過 openAI 產出專業研究報告。</p>
+            <div class="input-group">
+                <input type="text" id="ticker" placeholder="例如：3481 或 台積電 2330" autocomplete="off">
+                <button id="analyze-btn" onclick="analyzeStock()">開始分析</button>
+            </div>
+            <div id="status-text" style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1.5rem; text-align: center; display: none;">
+                正在即時爬取網路資料並呼叫 AI 模型... (約需 10~15 秒)
+            </div>
+            <div class="loader" id="loader"></div>
+        </div>
+        
+        <div class="glass-panel markdown-body" id="result-container">
+            <div id="markdown-content"></div>
+        </div>
+        
+        <!-- 下載區塊加在最底部 -->
+        <div id="download-area" style="display: none; justify-content: center; margin-bottom: 3rem;">
+            <button onclick="downloadReport('pdf')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
+                📥 下載專屬 AI 研究報告 (.pdf)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentMarkdown = "";
+
+        async function analyzeStock() {
+            const ticker = document.getElementById('ticker').value.trim();
+            if (!ticker) return;
+            
+            const btn = document.getElementById('analyze-btn');
+            const loader = document.getElementById('loader');
+            const resultContainer = document.getElementById('result-container');
+            const statusText = document.getElementById('status-text');
+            const content = document.getElementById('markdown-content');
+            
+            btn.disabled = true;
+            loader.style.display = 'block';
+            statusText.style.display = 'block';
+            resultContainer.style.display = 'none';
+            document.getElementById('download-area').style.display = 'none';
+            content.innerHTML = '';
+            currentMarkdown = '';
+            
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: ticker })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || '發生錯誤');
+                }
+                
+                resultContainer.style.display = 'block';
+                document.getElementById('download-area').style.display = 'flex';
+                currentMarkdown = data.markdown;
+                content.innerHTML = marked.parse(data.markdown);
+            } catch (err) {
+                alert('分析失敗: ' + err.message);
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+                statusText.style.display = 'none';
+            }
+        }
+        
+        function downloadReport(format) {
+            if (!currentMarkdown) return;
+            const ticker = document.getElementById('ticker').value.trim() || '分析報告';
+            const dateStr = new Date().toISOString().split('T')[0];
+            const contentDiv = document.getElementById('markdown-content');
+            
+            let fileContent = '';
+            let mimeType = '';
+            let filename = `${ticker}_AI研究報告_${dateStr}`;
+            
+            if (format === 'md') {
+                fileContent = currentMarkdown;
+                mimeType = 'text/markdown;charset=utf-8;';
+                filename += '.md';
+                triggerDownload(fileContent, mimeType, filename);
+            } else if (format === 'html') {
+                fileContent = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${ticker} 分析報告</title><style>body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; background: #fff;} h3 { color: #4f46e5; border-bottom: 2px solid #efefef; padding-bottom: 8px; margin-top: 24px; } table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; } th { background: #f8fafc; color: #333; }</style></head><body>${contentDiv.innerHTML}</body></html>`;
+                mimeType = 'text/html;charset=utf-8;';
+                filename += '.html';
+                triggerDownload(fileContent, mimeType, filename);
+            } else if (format === 'pdf') {
+                const opt = {
+                    margin: 10,
+                    filename: filename + '.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                };
+                
+                // 為了讓 PDF 更好看，我們也使用乾淨的白色樣式進行轉換
+                const cleanHtml = `<div style="font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; line-height: 1.6; padding: 20px; color: #333; background: #fff;">
+                    <h2 style="text-align: center; color: #1e293b;">${ticker} AI 投資研究報告</h2>
+                    <p style="text-align: center; color: #64748b; font-size: 0.9rem; margin-top: -10px;">報告日期：${dateStr}</p>
+                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                    ${contentDiv.innerHTML}
+                </div>`;
+                
+                html2pdf().set(opt).from(cleanHtml).save();
+            }
+        }
+
+        function triggerDownload(content, mimeType, filename) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
+        // 按下 Enter 觸發搜尋
+        document.getElementById('ticker').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') analyzeStock();
+        });
+    </script>
+</body>
+</html>
