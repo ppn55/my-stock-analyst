@@ -262,7 +262,8 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
         date=today_date,
         current_year=current_year,
         past_5_yr_start=past_5_yr_start,
-        past_5_yr_end=past_5_yr_end
+        past_5_yr_end=past_5_yr_end,
+        keyword=keyword
     )
     
     try:
