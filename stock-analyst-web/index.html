@@ -278,32 +278,35 @@
                         letterRendering: true,
                         scrollY: 0,
                         scrollX: 0,
-                        windowWidth: 750 // 核心：鎖定渲染解析度寬度，解決縮小問題
+                        windowWidth: 750 
                     },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
                     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
                 };
                 
-                // 修正排版問題：鎖定容器寬度與字體大小，確保在各種螢幕上產生的 PDF 比例一致
-                const pdfStyles = `
+                // 實體元件捕捉方案：在 DOM 中建立一個隱藏但「真實存在」的區塊
+                // 解決手機端渲染字串時可能發生的「時間差空白」問題
+                const tempDiv = document.createElement('div');
+                tempDiv.style.position = 'fixed';
+                tempDiv.style.left = '-9999px';
+                tempDiv.style.top = '0';
+                tempDiv.style.width = '750px';
+                tempDiv.style.background = '#fff';
+                
+                tempDiv.innerHTML = `
                     <style>
-                        body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #333; background: #fff; margin: 0; padding: 0; }
-                        .pdf-container { width: 720px; padding: 15px; margin: 0; box-sizing: border-box; }
-                        h2 { text-align: center; color: #1e293b; margin-top: 0; margin-bottom: 10px; font-size: 24px; }
+                        #pdf-wrapper { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #333; background: #fff; padding: 20px; box-sizing: border-box; }
+                        h2 { text-align: center; color: #1e293b; margin-top: 0; margin-bottom: 5px; font-size: 26px; }
                         .date { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px; }
                         h3 { color: #4f46e5; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 24px; font-size: 20px; }
-                        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; page-break-inside: auto; border: 1px solid #e2e8f0; }
-                        tr { page-break-inside: avoid; page-break-after: auto; }
-                        th, td { border: 1px solid #e2e8f0; padding: 8px 10px; text-align: left; }
+                        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; border: 1px solid #e2e8f0; }
+                        tr { page-break-inside: avoid; }
+                        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
                         th { background: #f8fafc; color: #1e293b; font-weight: 600; }
                         p, li { line-height: 1.6; margin-bottom: 10px; font-size: 15px; }
                         hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
                     </style>
-                `;
-                
-                const cleanHtml = `
-                    ${pdfStyles}
-                    <div class="pdf-container">
+                    <div id="pdf-wrapper">
                         <h2>${ticker} AI 投資研究報告</h2>
                         <div class="date">報告日期：${dateStr}</div>
                         <hr>
@@ -311,7 +314,14 @@
                     </div>
                 `;
                 
-                html2pdf().set(opt).from(cleanHtml).save();
+                document.body.appendChild(tempDiv);
+
+                // 給予瀏覽器微量時間進行實體渲染，確保 Canvas 抓取的不是空白
+                setTimeout(() => {
+                    html2pdf().set(opt).from(tempDiv).save().then(() => {
+                        document.body.removeChild(tempDiv);
+                    });
+                }, 500); 
             }
         }
 
