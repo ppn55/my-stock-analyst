@@ -6,7 +6,6 @@
     <title>AI 台股分析師 - 專業研報生成系統</title>
     <!-- 引入 marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root {
             --bg: #0f111a;
@@ -178,8 +177,8 @@
         
         <!-- 下載區塊加在最底部 -->
         <div id="download-area" style="display: none; justify-content: center; margin-bottom: 3rem;">
-            <button onclick="downloadReport('pdf')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
-                📥 下載專屬 AI 研究報告 (.pdf)
+            <button onclick="downloadReport('html')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
+                📥 下載專屬 AI 研究報告 (.html)
             </button>
         </div>
     </div>
@@ -268,29 +267,22 @@
                 filename += '.md';
                 triggerDownload(fileContent, mimeType, filename);
             } else if (format === 'html') {
-                fileContent = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${ticker} 分析報告</title><style>body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; color: #333; background: #fff;} h3 { color: #4f46e5; border-bottom: 2px solid #efefef; padding-bottom: 8px; margin-top: 24px; } table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; } th { background: #f8fafc; color: #333; }</style></head><body>${contentDiv.innerHTML}</body></html>`;
+                // 提供精美的 HTML 格式（排版與之前設計的 PDF 一致，但更穩定）
+                const styles = `
+                    body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 40px 20px; max-width: 800px; margin: 0 auto; color: #333; background: #fff;} 
+                    h2 { text-align: center; color: #1e293b; margin-bottom: 5px; }
+                    .date { text-align: center; color: #64748b; font-size: 0.9rem; margin-bottom: 20px; }
+                    h3 { color: #4f46e5; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 24px; } 
+                    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; } 
+                    th, td { border: 1px solid #e2e8f0; padding: 12px 10px; text-align: left; } 
+                    th { background: #f8fafc; color: #1e293b; font-weight: 600; }
+                    hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+                    p, li { margin-bottom: 10px; }
+                `;
+                fileContent = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${ticker} AI研究報告</title><style>${styles}</style></head><body><h2>${ticker} AI 投資研究報告</h2><div class="date">報告日期：${dateStr}</div><hr>${contentDiv.innerHTML}</body></html>`;
                 mimeType = 'text/html;charset=utf-8;';
                 filename += '.html';
                 triggerDownload(fileContent, mimeType, filename);
-            } else if (format === 'pdf') {
-                const opt = {
-                    margin: 10,
-                    filename: filename + '.pdf',
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-                };
-                
-                // 為了讓 PDF 更好看，我們也使用乾淨的白色樣式進行轉換
-                const cleanHtml = `<div style="font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; line-height: 1.6; padding: 20px; color: #333; background: #fff;">
-                    <h2 style="text-align: center; color: #1e293b;">${ticker} AI 投資研究報告</h2>
-                    <p style="text-align: center; color: #64748b; font-size: 0.9rem; margin-top: -10px;">報告日期：${dateStr}</p>
-                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                    ${contentDiv.innerHTML}
-                </div>`;
-                
-                html2pdf().set(opt).from(cleanHtml).save();
             }
         }
 
