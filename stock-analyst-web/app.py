@@ -103,6 +103,29 @@ def get_brave_search_results(query: str):
         print(f"Brave API Error on query '{query}': {e}")
         return ""
 
+def get_company_name(ticker: str):
+    """先找出股票代號對應的公司名稱，避免後續搜尋偏移"""
+    query = f"台股 {ticker} 公司名稱 官方全名"
+    search_context = get_brave_search_results(query)
+    
+    if not search_context:
+        return ticker
+        
+    try:
+        response = client.chat.completions.create(
+            model="gemini-3-flash-preview",
+            messages=[
+                {"role": "system", "content": "您是一位精通台股的助手。請從搜尋結果中提取該股票代號的『公司簡稱』，並只回傳該名稱（例如：台積電、聯嘉）。若找不到請回傳原始代號。"},
+                {"role": "user", "content": f"代號：{ticker}\n搜尋結果：\n{search_context}"}
+            ],
+            temperature=0,
+            max_tokens=20
+        )
+        name = response.choices[0].message.content.strip()
+        return name if name else ticker
+    except:
+        return ticker
+
 @app.get("/")
 def serve_frontend():
     return FileResponse("index.html")
@@ -126,21 +149,20 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     if not BRAVE_API_KEY or not ZEABUR_AI_API_KEY:
         raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
-    keyword = req.ticker
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    current_year = datetime.now().year
-    past_5_yr_start = current_year - 5
-    past_5_yr_end = current_year - 1
+    # 第一步：先解析公司名稱
+    company_name = get_company_name(keyword)
+    print(f"Resolved company name: {company_name}")
     
-    # 組合多個關鍵字確保擷取全面數據
+    # 使用「名稱 + 代號」組合搜尋，並加強年份過濾
+    name_ticker = f"{company_name} {keyword}"
     queries = [
-        f"公司簡介 業務範圍 轉投資 轉型 台股 {keyword}",
-        f"現價 市值 台股 {keyword} 2026",
-        f"近5年財報 EPS 毛利率 台股 {keyword} 2026",
-        f"近5年 配股配息 殖利率 台股 {keyword}",
-        f"近一個月 最新動態 重大新聞 鉅亨網 經濟日報 工商時報 Yahoo股市 台股 {keyword} 2026",
-        f"技術面 均線 RSI 支撐壓力 台股 {keyword} 2026",
-        f"外資買賣超 融資餘額 台股 {keyword} 2026"
+        f"公司簡介 業務範圍 經營項目 台股 {name_ticker}",
+        f"最新股價 市值 2026年3月 台股 {name_ticker}",
+        f"2021-2025 財報 EPS 毛利率 獲利 台股 {name_ticker}",
+        f"2021-2025 股利政策 殖利率 配息 台股 {name_ticker}",
+        f"近期重大新聞 營運展望 2026 台股 {name_ticker}",
+        f"技術分析 MA RSI 支撐壓力 2026 台股 {name_ticker}",
+        f"最新 籌碼面 外資投信買賣超 2026 台股 {name_ticker}"
     ]
     
     full_search_context = ""
@@ -159,11 +181,13 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     【時間基準提醒】
     本報告產出時間為 {current_year} 年。因此「近 5 年」的財報與股利數據，必須嚴格鎖定在 {past_5_yr_start} 年至 {past_5_yr_end} 年，絕對不可拿 2020 年以前的舊資料充數！若缺乏最新年度數據，請標註「資訊不足」或「預估」。
     
-    【極為重要：投資評級必須客觀、無私且具備批判性】
-    身為專業分析師，請絕對不要有「預設看多」或「避諱給出負面評價」的 AI 包袱！如果發現營收衰退、毛利下滑、技術線型轉弱（如跌破重要支撐），或是有負面重大新聞、外資連日賣超，請毫不猶豫地在第 11 項結論中給出「賣出」建議。請展現真實華爾街分析師的冷酷與客觀。
+    【極為重要：防幻覺與準確性指令】
+    1. 關於「股價」：請務必搜尋搜尋結果中標記為「2026年3月」或最近交易日的價格。若結果中有衝突，請優先選擇知名財經網站（如鉅亨網、Yahoo股市）的數據。
+    2. 關於「業務範圍」：嚴禁腦補或將此公司與其他相似名稱的公司混淆。**絕對不要** 提及其未在搜尋結果中明確出現的新事業（例如 AI 算力、餐飲等），除非資料中確實有提到該公司「近期轉型」且有具體進度。
+    3. 若發現搜尋資料與股票代號 {keyword} 明顯不符，請在報告開頭標註「警告：搜尋資料可能存在偏移」。
     
     【搜尋資料】：
-    (資料日期：{date})
+    (報告基準日：{date})
     {context}
     
     【報告格式要求 (嚴格遵守完整 11 大區塊與 Markdown 語法，請畫表格)】：
