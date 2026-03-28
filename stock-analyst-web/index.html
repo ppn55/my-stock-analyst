@@ -273,29 +273,31 @@
                     filename: filename + '.pdf',
                     image: { type: 'jpeg', quality: 0.98 },
                     html2canvas: { 
-                        scale: 2, 
+                        scale: 1.5, // 降低至 1.5 以防手機 Canvas 記憶體崩潰（依然清晰）
                         useCORS: true, 
                         letterRendering: true,
                         scrollY: 0,
                         scrollX: 0,
                         windowWidth: 750 
                     },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
                     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
                 };
                 
-                // 實體元件捕捉方案：在 DOM 中建立一個隱藏但「真實存在」的區塊
-                // 解決手機端渲染字串時可能發生的「時間差空白」問題
+                // 實體元件捕捉方案 v2：針對手機端 LINE 核心進行優化
                 const tempDiv = document.createElement('div');
-                tempDiv.style.position = 'fixed';
-                tempDiv.style.left = '-9999px';
+                // 核心改進：不再移到視窗外，而是改用「視覺不可見但實體存在」的 z-index 置底
+                tempDiv.style.position = 'absolute';
+                tempDiv.style.left = '0';
                 tempDiv.style.top = '0';
                 tempDiv.style.width = '750px';
+                tempDiv.style.zIndex = '-1';
+                tempDiv.style.visibility = 'hidden';
                 tempDiv.style.background = '#fff';
                 
                 tempDiv.innerHTML = `
                     <style>
-                        #pdf-wrapper { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #333; background: #fff; padding: 20px; box-sizing: border-box; }
+                        #pdf-wrapper { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #333; background: #fff; padding: 25px; box-sizing: border-box; }
                         h2 { text-align: center; color: #1e293b; margin-top: 0; margin-bottom: 5px; font-size: 26px; }
                         .date { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px; }
                         h3 { color: #4f46e5; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 24px; font-size: 20px; }
@@ -316,12 +318,16 @@
                 
                 document.body.appendChild(tempDiv);
 
-                // 給予瀏覽器微量時間進行實體渲染，確保 Canvas 抓取的不是空白
+                // 將等待時間延長至 1000ms，確保長報表有足夠時間排版
                 setTimeout(() => {
                     html2pdf().set(opt).from(tempDiv).save().then(() => {
                         document.body.removeChild(tempDiv);
+                    }).catch(err => {
+                        console.error('PDF 產生失敗:', err);
+                        alert('PDF 產生失敗，建議點選右上角使用瀏覽器開啟後再試。');
+                        document.body.removeChild(tempDiv);
                     });
-                }, 500); 
+                }, 1000); 
             }
         }
 
