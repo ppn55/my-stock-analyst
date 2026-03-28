@@ -165,6 +165,9 @@
                 <input type="text" id="ticker" placeholder="例如：3481 或 台積電 2330" autocomplete="off">
                 <button id="analyze-btn" onclick="analyzeStock()">開始分析</button>
             </div>
+            <div id="usage-limit" style="margin-top: 10px; font-size: 0.85rem; color: var(--text-muted);">
+                今日剩餘分析次數：<span id="remaining-count">--</span> / <span id="total-limit">--</span>
+            </div>
             <div id="status-text" style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1.5rem; text-align: center; display: none;">
                 正在即時爬取網路資料並呼叫 AI 模型... (約需 10~15 秒)
             </div>
@@ -205,6 +208,30 @@
                 }
             }
         });
+
+        async function updateLimitStatus() {
+            try {
+                const response = await fetch('/api/limit-status');
+                const data = await response.json();
+                document.getElementById('remaining-count').innerText = data.remaining;
+                document.getElementById('total-limit').innerText = data.limit;
+                
+                const btn = document.getElementById('analyze-btn');
+                if (data.remaining <= 0) {
+                    btn.disabled = true;
+                    btn.innerText = '今日分析已達上限';
+                    btn.style.background = '#374151';
+                } else {
+                    btn.disabled = false;
+                    btn.innerText = '開始分析';
+                    btn.style.background = 'var(--primary)';
+                }
+            } catch (err) {
+                console.error('無法取得限制狀態:', err);
+            }
+        }
+
+        window.onload = updateLimitStatus;
 
         async function analyzeStock() {
             const ticker = document.getElementById('ticker').value.trim();
@@ -248,9 +275,10 @@
                 alert('分析失敗: ' + err.message);
                 console.error(err);
             } finally {
-                btn.disabled = false;
                 loader.style.display = 'none';
                 statusText.style.display = 'none';
+                // 更新剩餘次數
+                updateLimitStatus();
             }
         }
         
