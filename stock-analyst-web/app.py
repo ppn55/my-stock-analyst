@@ -149,6 +149,12 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     if not BRAVE_API_KEY or not ZEABUR_AI_API_KEY:
         raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
+    keyword = req.ticker
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    current_year = datetime.now().year
+    past_5_yr_start = current_year - 5
+    past_5_yr_end = current_year - 1
+    
     # 第一步：先解析公司名稱
     company_name = get_company_name(keyword)
     print(f"Resolved company name: {company_name}")
