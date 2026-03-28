@@ -1,7 +1,8 @@
 import os
 import requests
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+import json
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -31,6 +32,37 @@ if ZEABUR_AI_API_KEY:
         base_url="https://hnd1.aihub.zeabur.ai/"
     )
 
+# 限制設定
+LIMIT_PER_DAY = 5
+USAGE_FILE = "usage_stats.json"
+
+def get_usage_db():
+    if not os.path.exists(USAGE_FILE):
+        return {}
+    try:
+        with open(USAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_usage_db(db):
+    with open(USAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, indent=4, ensure_ascii=False)
+
+def get_usage(ip: str):
+    today = datetime.now().strftime("%Y-%m-%d")
+    db = get_usage_db()
+    day_data = db.get(today, {})
+    return day_data.get(ip, 0)
+
+def increment_usage(ip: str):
+    today = datetime.now().strftime("%Y-%m-%d")
+    db = get_usage_db()
+    if today not in db:
+        db[today] = {}
+    db[today][ip] = db[today].get(ip, 0) + 1
+    save_usage_db(db)
+
 class AnalyzeRequest(BaseModel):
     ticker: str
 
@@ -59,8 +91,19 @@ def get_brave_search_results(query: str):
 def serve_frontend():
     return FileResponse("index.html")
 
+@app.get("/api/limit-status")
+def get_limit_status(request: Request):
+    ip = request.client.host
+    count = get_usage(ip)
+    return {"limit": LIMIT_PER_DAY, "used": count, "remaining": max(0, LIMIT_PER_DAY - count)}
+
 @app.post("/api/analyze")
-def analyze_stock(req: AnalyzeRequest):
+def analyze_stock(req: AnalyzeRequest, request: Request):
+    ip = request.client.host
+    used = get_usage(ip)
+    if used >= LIMIT_PER_DAY:
+        raise HTTPException(status_code=429, detail=f"您今日的分析次數已達上限 ({LIMIT_PER_DAY} 次)，請明天再試。")
+        
     if not BRAVE_API_KEY or not ZEABUR_AI_API_KEY:
         raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
@@ -182,6 +225,8 @@ def analyze_stock(req: AnalyzeRequest):
             ],
             temperature=0.7
         )
+        # 成功完成後，增加使用次數
+        increment_usage(ip)
         return {"markdown": response.choices[0].message.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
