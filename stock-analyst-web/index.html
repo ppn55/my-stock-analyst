@@ -6,7 +6,6 @@
     <title>AI 台股分析師 - 專業研報生成系統</title>
     <!-- 引入 marked.js 解析 Markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         :root {
             --bg: #0f111a;
@@ -176,15 +175,11 @@
             <div id="markdown-content"></div>
         </div>
         
-        <!-- 下載區塊：雙按鈕方案 -->
-        <div id="download-area" style="display: none; flex-direction: column; align-items: center; gap: 1rem; margin-bottom: 3rem;">
-            <button onclick="downloadReport('pdf')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5); width: 280px;" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
-                📥 下載 PDF 報表
+        <!-- 下載區塊：高穩定性 HTML 方案 -->
+        <div id="download-area" style="display: none; justify-content: center; margin-bottom: 3rem;">
+            <button onclick="downloadReport('html')" style="background: #10b981; border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);" onmouseover="this.style.background='#059669'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='#10b981'; this.style.transform='translateY(0)'">
+                📥 下載專業研究報告 (.html)
             </button>
-            <button onclick="downloadReport('html')" style="background: #10b981; border: none; border-radius: 8px; color: white; padding: 0.8rem 2rem; font-size: 1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3); width: 280px;" onmouseover="this.style.background='#059669'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='#10b981'; this.style.transform='translateY(0)'">
-                🌐 下載專業網頁版 (最穩定)
-            </button>
-            <p style="color: #64748b; font-size: 0.85rem; margin-top: 0.5rem;">※ 若 PDF 為空白，請點選右上角「使用瀏覽器開啟」，或直接下載網頁版。</p>
         </div>
     </div>
 
@@ -285,63 +280,6 @@
                 mimeType = 'text/html;charset=utf-8;';
                 filename += '.html';
                 triggerDownload(fileContent, mimeType, filename);
-            } else if (format === 'pdf') {
-                const opt = {
-                    margin: [15, 15],
-                    filename: filename + '.pdf',
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { 
-                        scale: 2, // 電腦版效能好，提升解析度
-                        useCORS: true, 
-                        letterRendering: true,
-                        onclone: (clonedDoc) => {
-                            // 核心技術：在克隆出的 DOM 中動態變換樣式（不影響目前頁面）
-                            const clonedContent = clonedDoc.getElementById('markdown-content');
-                            clonedContent.style.background = '#fff';
-                            clonedContent.style.color = '#333';
-                            clonedContent.style.padding = '30px';
-                            clonedContent.style.fontFamily = '"PingFang TC", "Microsoft JhengHei", sans-serif';
-                            
-                            // 動態插入標題
-                            const header = clonedDoc.createElement('div');
-                            header.innerHTML = `
-                                <h2 style="text-align: center; color: #1e293b; margin-bottom: 5px; font-size: 26px;">${ticker} AI 投資研究報告</h2>
-                                <div style="text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px;">報告日期：${dateStr}</div>
-                                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-                            `;
-                            clonedContent.prepend(header);
-                            
-                            // 強制所有表格在 PDF 中顯示框線
-                            clonedContent.querySelectorAll('table').forEach(table => {
-                                table.style.borderCollapse = 'collapse';
-                                table.style.width = '100%';
-                                table.style.margin = '15px 0';
-                                table.style.fontSize = '13px';
-                                table.querySelectorAll('th, td').forEach(cell => {
-                                    cell.style.border = '1px solid #e2e8f0';
-                                    cell.style.padding = '8px 10px';
-                                });
-                                table.querySelectorAll('th').forEach(th => th.style.background = '#f8fafc');
-                            });
-                            
-                            // 修整標題顏色
-                            clonedContent.querySelectorAll('h3').forEach(h3 => {
-                                h3.style.color = '#4f46e5';
-                                h3.style.borderBottom = '2px solid #f1f5f9';
-                                h3.style.paddingBottom = '8px';
-                            });
-                        }
-                    },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-                };
-                
-                // 直接捕捉目前的 contentDiv，並透過 onclone 進行樣式修正
-                html2pdf().set(opt).from(contentDiv).save().catch(err => {
-                    console.error('PDF 產生失敗:', err);
-                    alert('PDF 產出失敗，正在為您下載穩定的網頁版...');
-                    downloadReport('html');
-                });
             }
         }
 
