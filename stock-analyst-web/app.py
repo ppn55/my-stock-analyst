@@ -57,7 +57,7 @@ def get_brave_search_results(query: str):
 
 @app.get("/")
 def serve_frontend():
-    return FileResponse("static/index.html")
+    return FileResponse("index.html")
 
 @app.post("/api/analyze")
 def analyze_stock(req: AnalyzeRequest):
