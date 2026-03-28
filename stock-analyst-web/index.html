@@ -176,11 +176,15 @@
             <div id="markdown-content"></div>
         </div>
         
-        <!-- 下載區塊加在最底部 -->
-        <div id="download-area" style="display: none; justify-content: center; margin-bottom: 3rem;">
-            <button onclick="downloadReport('pdf')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
-                📥 下載專屬 AI 研究報告 (.pdf)
+        <!-- 下載區塊：雙按鈕方案 -->
+        <div id="download-area" style="display: none; flex-direction: column; align-items: center; gap: 1rem; margin-bottom: 3rem;">
+            <button onclick="downloadReport('pdf')" style="background: var(--primary); border: none; border-radius: 8px; color: white; padding: 1rem 2.5rem; font-size: 1.1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5); width: 280px;" onmouseover="this.style.background='#4f46e5'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='var(--primary)'; this.style.transform='translateY(0)'">
+                📥 下載 PDF 報表
             </button>
+            <button onclick="downloadReport('html')" style="background: #10b981; border: none; border-radius: 8px; color: white; padding: 0.8rem 2rem; font-size: 1rem; font-weight: 600; transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3); width: 280px;" onmouseover="this.style.background='#059669'; this.style.transform='translateY(-3px)'" onmouseout="this.style.background='#10b981'; this.style.transform='translateY(0)'">
+                🌐 下載專業網頁版 (最穩定)
+            </button>
+            <p style="color: #64748b; font-size: 0.85rem; margin-top: 0.5rem;">※ 若 PDF 為空白，請點選右上角「使用瀏覽器開啟」，或直接下載網頁版。</p>
         </div>
     </div>
 
@@ -242,6 +246,9 @@
                 document.getElementById('download-area').style.display = 'flex';
                 currentMarkdown = data.markdown;
                 content.innerHTML = marked.parse(data.markdown);
+                
+                // 平滑滾動到結果
+                resultContainer.scrollIntoView({ behavior: 'smooth' });
             } catch (err) {
                 alert('分析失敗: ' + err.message);
                 console.error(err);
@@ -262,72 +269,79 @@
             let mimeType = '';
             let filename = `${ticker}_AI研究報告_${dateStr}`;
             
-            if (format === 'md') {
-                fileContent = currentMarkdown;
-                mimeType = 'text/markdown;charset=utf-8;';
-                filename += '.md';
+            if (format === 'html') {
+                const styles = `
+                    body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 40px 20px; max-width: 800px; margin: 0 auto; color: #333; background: #fff;} 
+                    h2 { text-align: center; color: #1e293b; margin-bottom: 5px; }
+                    .date { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px; }
+                    h3 { color: #4f46e5; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 24px; } 
+                    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; border: 1px solid #e2e8f0; } 
+                    th, td { border: 1px solid #e2e8f0; padding: 12px 10px; text-align: left; } 
+                    th { background: #f8fafc; color: #1e293b; font-weight: 600; }
+                    p, li { margin-bottom: 10px; }
+                    hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+                `;
+                fileContent = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${ticker} AI研究報告</title><style>${styles}</style></head><body><h2>${ticker} AI 投資研究報告</h2><div class="date">報告日期：${dateStr}</div><hr>${contentDiv.innerHTML}</body></html>`;
+                mimeType = 'text/html;charset=utf-8;';
+                filename += '.html';
                 triggerDownload(fileContent, mimeType, filename);
             } else if (format === 'pdf') {
                 const opt = {
-                    margin: [15, 12],
+                    margin: [15, 15],
                     filename: filename + '.pdf',
                     image: { type: 'jpeg', quality: 0.98 },
                     html2canvas: { 
-                        scale: 1.5, // 降低至 1.5 以防手機 Canvas 記憶體崩潰（依然清晰）
+                        scale: 2, // 電腦版效能好，提升解析度
                         useCORS: true, 
                         letterRendering: true,
-                        scrollY: 0,
-                        scrollX: 0,
-                        windowWidth: 750 
+                        onclone: (clonedDoc) => {
+                            // 核心技術：在克隆出的 DOM 中動態變換樣式（不影響目前頁面）
+                            const clonedContent = clonedDoc.getElementById('markdown-content');
+                            clonedContent.style.background = '#fff';
+                            clonedContent.style.color = '#333';
+                            clonedContent.style.padding = '30px';
+                            clonedContent.style.fontFamily = '"PingFang TC", "Microsoft JhengHei", sans-serif';
+                            
+                            // 動態插入標題
+                            const header = clonedDoc.createElement('div');
+                            header.innerHTML = `
+                                <h2 style="text-align: center; color: #1e293b; margin-bottom: 5px; font-size: 26px;">${ticker} AI 投資研究報告</h2>
+                                <div style="text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px;">報告日期：${dateStr}</div>
+                                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+                            `;
+                            clonedContent.prepend(header);
+                            
+                            // 強制所有表格在 PDF 中顯示框線
+                            clonedContent.querySelectorAll('table').forEach(table => {
+                                table.style.borderCollapse = 'collapse';
+                                table.style.width = '100%';
+                                table.style.margin = '15px 0';
+                                table.style.fontSize = '13px';
+                                table.querySelectorAll('th, td').forEach(cell => {
+                                    cell.style.border = '1px solid #e2e8f0';
+                                    cell.style.padding = '8px 10px';
+                                });
+                                table.querySelectorAll('th').forEach(th => th.style.background = '#f8fafc');
+                            });
+                            
+                            // 修整標題顏色
+                            clonedContent.querySelectorAll('h3').forEach(h3 => {
+                                h3.style.color = '#4f46e5';
+                                h3.style.borderBottom = '2px solid #f1f5f9';
+                                h3.style.paddingBottom = '8px';
+                            });
+                        }
                     },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
                     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
                 };
                 
-                // 實體元件捕捉方案 v2：針對手機端 LINE 核心進行優化
-                const tempDiv = document.createElement('div');
-                // 核心改進：不再移到視窗外，而是改用「視覺不可見但實體存在」的 z-index 置底
-                tempDiv.style.position = 'absolute';
-                tempDiv.style.left = '0';
-                tempDiv.style.top = '0';
-                tempDiv.style.width = '750px';
-                tempDiv.style.zIndex = '-1';
-                tempDiv.style.visibility = 'hidden';
-                tempDiv.style.background = '#fff';
-                
-                tempDiv.innerHTML = `
-                    <style>
-                        #pdf-wrapper { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; color: #333; background: #fff; padding: 25px; box-sizing: border-box; }
-                        h2 { text-align: center; color: #1e293b; margin-top: 0; margin-bottom: 5px; font-size: 26px; }
-                        .date { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 20px; }
-                        h3 { color: #4f46e5; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-top: 24px; font-size: 20px; }
-                        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; border: 1px solid #e2e8f0; }
-                        tr { page-break-inside: avoid; }
-                        th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
-                        th { background: #f8fafc; color: #1e293b; font-weight: 600; }
-                        p, li { line-height: 1.6; margin-bottom: 10px; font-size: 15px; }
-                        hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
-                    </style>
-                    <div id="pdf-wrapper">
-                        <h2>${ticker} AI 投資研究報告</h2>
-                        <div class="date">報告日期：${dateStr}</div>
-                        <hr>
-                        ${contentDiv.innerHTML}
-                    </div>
-                `;
-                
-                document.body.appendChild(tempDiv);
-
-                // 將等待時間延長至 1000ms，確保長報表有足夠時間排版
-                setTimeout(() => {
-                    html2pdf().set(opt).from(tempDiv).save().then(() => {
-                        document.body.removeChild(tempDiv);
-                    }).catch(err => {
-                        console.error('PDF 產生失敗:', err);
-                        alert('PDF 產生失敗，建議點選右上角使用瀏覽器開啟後再試。');
-                        document.body.removeChild(tempDiv);
-                    });
-                }, 1000); 
+                // 直接捕捉目前的 contentDiv，並透過 onclone 進行樣式修正
+                html2pdf().set(opt).from(contentDiv).save().catch(err => {
+                    console.error('PDF 產生失敗:', err);
+                    alert('PDF 產出失敗，正在為您下載穩定的網頁版...');
+                    downloadReport('html');
+                });
             }
         }
 
