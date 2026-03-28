@@ -187,6 +187,26 @@
     <script>
         let currentMarkdown = "";
 
+        // 偵測是否為 LINE 內置瀏覽器並強制開啟外部瀏覽器
+        (function() {
+            const ua = navigator.userAgent || navigator.vendor || window.opera;
+            const isLine = ua.indexOf("Line") > -1;
+            const url = new URL(window.location.href);
+            if (isLine && !url.searchParams.get('openExternalBrowser')) {
+                url.searchParams.set('openExternalBrowser', '1');
+                window.location.href = url.toString();
+            }
+        })();
+
+        // 設定 marked.js 讓所有連結開新視窗
+        marked.use({
+            renderer: {
+                link(href, title, text) {
+                    return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+                }
+            }
+        });
+
         async function analyzeStock() {
             const ticker = document.getElementById('ticker').value.trim();
             if (!ticker) return;
