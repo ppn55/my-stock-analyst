@@ -34,15 +34,30 @@ if ZEABUR_AI_API_KEY:
 
 # 限制設定
 LIMIT_PER_DAY = 5
-USAGE_FILE = "usage_stats.json"
+# 使用絕對路徑以確保在不同啟動目錄下都能正確讀取
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USAGE_FILE = os.path.join(BASE_DIR, "usage_stats.json")
+
+def get_real_ip(request: Request):
+    # 優先從 Zeabur 代理讀取真實用戶 IP
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        # X-Forwarded-For 可能包含多個 IP，取第一個真實位址
+        return forwarded.split(",")[0].strip()
+    return request.client.host
 
 def get_usage_db():
-    if not os.path.exists(USAGE_FILE):
-        return {}
     try:
+        if not os.path.exists(USAGE_FILE):
+            # 初始化空檔案
+            with open(USAGE_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
         with open(USAGE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"Error loading usage DB: {e}")
         return {}
 
 def save_usage_db(db):
@@ -56,6 +71,7 @@ def get_usage(ip: str):
     return day_data.get(ip, 0)
 
 def increment_usage(ip: str):
+    print(f"Incrementing usage for IP: {ip}")
     today = datetime.now().strftime("%Y-%m-%d")
     db = get_usage_db()
     if today not in db:
@@ -93,13 +109,16 @@ def serve_frontend():
 
 @app.get("/api/limit-status")
 def get_limit_status(request: Request):
-    ip = request.client.host
+    ip = get_real_ip(request)
+    print(f"Checking limit for real IP: {ip}")
     count = get_usage(ip)
     return {"limit": LIMIT_PER_DAY, "used": count, "remaining": max(0, LIMIT_PER_DAY - count)}
 
 @app.post("/api/analyze")
 def analyze_stock(req: AnalyzeRequest, request: Request):
-    ip = request.client.host
+    ip = get_real_ip(request)
+    print(f"Analyzing for real IP: {ip}")
+    
     used = get_usage(ip)
     if used >= LIMIT_PER_DAY:
         raise HTTPException(status_code=429, detail=f"您今日的分析次數已達上限 ({LIMIT_PER_DAY} 次)，請明天再試。")
