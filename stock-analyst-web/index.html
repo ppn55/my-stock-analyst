@@ -160,7 +160,7 @@
                 <img src="/static/頭像5.png" alt="我的頭像" style="width: 50px; height: 50px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.3);" onerror="this.style.display='none'">
                 AI 台股分析師 v2.0
             </h1>
-            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過 openAI 產出專業研究報告。</p>
+            <p style="color: var(--text-muted); margin-bottom: 0;">輸入台股代號或名稱，系統將自動從網路彙整財報與籌碼數據，並透過 AI 產出專業研究報告。</p>
             <div class="input-group">
                 <input type="text" id="ticker" placeholder="例如：3481 或 台積電 2330" autocomplete="off">
                 <button id="analyze-btn" onclick="analyzeStock()">開始分析</button>
@@ -169,7 +169,7 @@
                 今日剩餘分析次數：<span id="remaining-count">--</span> / <span id="total-limit">--</span>
             </div>
             <div id="status-text" style="color: var(--text-muted); font-size: 0.9rem; margin-top: 1.5rem; text-align: center; display: none;">
-                正在即時爬取網路資料並呼叫 AI 模型... (約需 10~15 秒)
+                正在即時獲取網路資料並呼叫 AI 模型進行分析... (約需 10~20 秒)
             </div>
             <div class="loader" id="loader"></div>
         </div>
