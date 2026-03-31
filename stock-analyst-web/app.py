@@ -24,7 +24,7 @@ if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 ZEABUR_AI_API_KEY = os.getenv("ZEABUR_AI_API_KEY")
 
 client = None
@@ -86,29 +86,31 @@ class AnalyzeRequest(BaseModel):
     ticker: str
 
 def get_search_results(query: str):
-    """透過 SerpApi 取得 Google 搜尋結果摘要"""
-    url = "https://serpapi.com/search"
-    params = {
-        "engine": "google",
+    """透過 Serper.dev 取得 Google 搜尋結果摘要"""
+    url = "https://google.serper.dev/search"
+    payload = json.dumps({
         "q": query,
-        "api_key": SERPAPI_API_KEY,
         "gl": "tw",         # 國家: 台灣
         "hl": "zh-tw",      # 語言: 繁體中文
         "num": 5            # 取得前 5 筆結果
+    })
+    headers = {
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json'
     }
     
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
         results_text = ""
-        for item in data.get('organic_results', [])[:5]:
+        for item in data.get('organic', [])[:5]:
             title = item.get('title', '')
             snippet = item.get('snippet', '')
             results_text += f"[標題]: {title}\n[內容]: {snippet}\n---\n"
         return results_text
     except Exception as e:
-        print(f"SerpApi Error on query '{query}': {e}")
+        print(f"Serper API Error on query '{query}': {e}")
         return ""
 
 def get_twse_closing_price(stock_no: str):
@@ -243,8 +245,8 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     if used >= LIMIT_PER_DAY:
         raise HTTPException(status_code=429, detail=f"您今日的分析次數已達上限 ({LIMIT_PER_DAY} 次)，請明天再試。")
         
-    if not SERPAPI_API_KEY or not ZEABUR_AI_API_KEY:
-        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables (需要 SERPAPI_API_KEY 與 ZEABUR_AI_API_KEY)。")
+    if not SERPER_API_KEY or not ZEABUR_AI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables (需要 SERPER_API_KEY 與 ZEABUR_AI_API_KEY)。")
         
     keyword = req.ticker
     now = datetime.now(TZ_TAIPEI)  # 台灣時間
