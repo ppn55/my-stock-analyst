@@ -3,7 +3,6 @@ import requests
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from duckduckgo_search import DDGS
 import json
 
 TZ_TAIPEI = ZoneInfo("Asia/Taipei")
@@ -25,6 +24,7 @@ if not os.path.exists("static"):
     os.makedirs("static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
 ZEABUR_AI_API_KEY = os.getenv("ZEABUR_AI_API_KEY")
 
 client = None
@@ -36,7 +36,7 @@ if ZEABUR_AI_API_KEY:
     )
 
 # 限制設定
-LIMIT_PER_DAY = 20
+LIMIT_PER_DAY = 5
 # 使用絕對路徑以確保在不同啟動目錄下都能正確讀取
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USAGE_FILE = os.path.join(BASE_DIR, "usage_stats.json")
@@ -86,23 +86,24 @@ class AnalyzeRequest(BaseModel):
     ticker: str
 
 def get_search_results(query: str):
-    """透過 DuckDuckGo 搜尋（無需 API Key，免費）"""
+    """透過 Brave Search API 取得搜尋結果摘要 (取代無效的 DDG)"""
+    url = "https://api.search.brave.com/res/v1/web/search"
+    headers = {
+        "Accept": "application/json",
+        "X-Subscription-Token": BRAVE_API_KEY
+    }
+    params = {"q": query, "count": 5, "search_lang": "zh-hant"}
+    
     try:
+        response = requests.get(url, headers=headers, params=params, timeout=6)
+        response.raise_for_status()
+        data = response.json()
         results_text = ""
-        with DDGS() as ddgs:
-            results = ddgs.text(
-                query,
-                region="zh-TW",
-                safesearch="off",
-                max_results=5
-            )
-            for item in results:
-                title = item.get("title", "")
-                body  = item.get("body", "")
-                results_text += f"[標題]: {title}\n[內容]: {body}\n---\n"
+        for item in data.get('web', {}).get('results', []):
+            results_text += f"[標題]: {item.get('title')}\n[內容]: {item.get('description')}\n---\n"
         return results_text
     except Exception as e:
-        print(f"DDG Search Error on query '{query}': {e}")
+        print(f"Brave API Error on query '{query}': {e}")
         return ""
 
 def get_twse_closing_price(stock_no: str):
@@ -237,8 +238,8 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     if used >= LIMIT_PER_DAY:
         raise HTTPException(status_code=429, detail=f"您今日的分析次數已達上限 ({LIMIT_PER_DAY} 次)，請明天再試。")
         
-    if not ZEABUR_AI_API_KEY:
-        raise HTTPException(status_code=500, detail="AI API Key 未設定，請檢查您 Zeabur 中的 ZEABUR_AI_API_KEY 變數。")
+    if not BRAVE_API_KEY or not ZEABUR_AI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
     keyword = req.ticker
     now = datetime.now(TZ_TAIPEI)  # 台灣時間
