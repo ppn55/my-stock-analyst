@@ -191,13 +191,16 @@ def get_stock_info(keyword: str):
         return keyword.strip(), None
 
     try:
+        sys_prompt = (
+            "您是精通台股的助手。請從搜尋結果中提取：\n"
+            "1. 公司簡稱（中文，例：中光電、台積電）\n"
+            "2. 4位數字股票代號（例：5371、2330）\n"
+            "請回傳：「代號:XXXX,名稱:公司簡稱」格式，不可加其他内容。"
+        )
         response = client.chat.completions.create(
             model="gemini-3-flash-preview",
             messages=[
-                {"role": "system", "content": """您是精通台股的助手。請從搜尋結果中提取：
-1. 公司簡稱（中文，例：中光電、台積電）
-2. 4位數字股票代號（例：5371、2330）
-請回傳：「代號:XXXX,名稱:公司簡稱」格式，不可加其他内容。"""},
+                {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": f"查詢：{keyword}\n\n搜尋結果：\n{search_context}"}
             ],
             temperature=0,
