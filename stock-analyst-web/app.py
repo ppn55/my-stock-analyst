@@ -36,7 +36,7 @@ if ZEABUR_AI_API_KEY:
     )
 
 # 限制設定
-LIMIT_PER_DAY = 5
+LIMIT_PER_DAY = 20
 # 使用絕對路徑以確保在不同啟動目錄下都能正確讀取
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USAGE_FILE = os.path.join(BASE_DIR, "usage_stats.json")
