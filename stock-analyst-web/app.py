@@ -1,6 +1,6 @@
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -89,7 +89,7 @@ def get_brave_search_results(query: str):
         "Accept": "application/json",
         "X-Subscription-Token": BRAVE_API_KEY
     }
-    params = {"q": query, "count": 5, "search_lang": "zh-hant"}
+    params = {"q": query, "count": 8, "search_lang": "zh-hant"}
     
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
@@ -150,26 +150,42 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
         raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables。")
         
     keyword = req.ticker
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    current_year = datetime.now().year
+    now = datetime.now()
+    today_date = now.strftime("%Y-%m-%d")
+    current_year = now.year
     past_5_yr_start = current_year - 5
     past_5_yr_end = current_year - 1
+
+    # 計算最近的交易日（週一到週五）
+    recent_trading_day = now
+    while recent_trading_day.weekday() >= 5:  # 5=週六, 6=週日
+        recent_trading_day -= timedelta(days=1)
+    recent_date_str = recent_trading_day.strftime("%Y年%-m月%-d日")  # 例：2026年3月31日
+    recent_date_str_tw = recent_trading_day.strftime("%Y-%m-%d")    # 例：2026-03-31
+    # Windows 不支援 %-m，改用 lstrip('0') 方式
+    recent_date_str = f"{recent_trading_day.year}年{recent_trading_day.month}月{recent_trading_day.day}日"
     
     # 第一步：先解析公司名稱
     company_name = get_company_name(keyword)
-    print(f"Resolved company name: {company_name}")
+    print(f"Resolved company name: {company_name}, recent trading day: {recent_date_str}")
     
-    # 使用「名稱 + 代號」組合搜尋，並加強指定收盤價與知名來源
+    # 使用「名稱 + 代號」組合搜尋，加強指定收盤價與知名來源
     name_ticker = f"{company_name} {keyword}"
     queries = [
+        # 1. 公司基本資料
         f"公司簡介 業務範圍 經營項目 台股 {name_ticker}",
-        f"2026年3月27日 收盤價 奇摩股市 {name_ticker}",
-        f"115年3月27日 收盤價 鉅亨網 {name_ticker}",
-        f"2021-2025 財報 EPS 毛利率 獲利 台股 {name_ticker}",
-        f"2021-2025 股利政策 殖利率 配息 台股 {name_ticker}",
-        f"近期重大新聞 營運展望 2026 台股 {name_ticker}",
-        f"技術分析 MA RSI 支撐壓力 2026 台股 {name_ticker}",
-        f"最新 籌碼面 外資投信買賣超 2026 台股 {name_ticker}"
+        # 2. 最新收盤價（動態日期）
+        f"{recent_date_str} 收盤價 股價 {name_ticker} site:tw.stock.yahoo.com OR site:cnyes.com OR site:wantgoo.com",
+        f"{recent_date_str_tw} 收盤 {name_ticker} 鉅亨網 OR 玩股網 OR goodinfo",
+        # 3. 財報數據 - 分開查詢提升毛利率命中率
+        f"{name_ticker} 毛利率 毛利 gross margin 歷年 goodinfo.tw OR statementdog.com",
+        f"{name_ticker} EPS 每股盈餘 {past_5_yr_start} {past_5_yr_end} 財報 cmoney OR goodinfo",
+        f"{name_ticker} 年報 {past_5_yr_start}-{past_5_yr_end} 股利 配息 殖利率",
+        # 4. 近期新聞與展望
+        f"{name_ticker} 近期 新聞 {current_year} 營運 轉型 展望 工商時報 OR 經濟日報 OR 鉅亨網",
+        # 5. 技術面與籌碼
+        f"{name_ticker} 技術分析 均線 RSI 支撐壓力 {current_year}",
+        f"{name_ticker} 籌碼 外資 投信 融資 {current_year}"
     ]
     
     full_search_context = ""
@@ -180,10 +196,18 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     # AI 報告模板 Prompt
     prompt_template = """
     您是一位專業且極具獨立批判性的資深台股分析師。請主要依據「網路搜尋資料」來評估該公司的商業模式、近期轉型與最新動態。
-    優先搜尋網站：鉅亨網https://www.cnyes.com/、工商時報https://www.ctee.com.tw/、經濟日報https://money.udn.com/、Yahoo股市https://finance.yahoo.com/tw/、公開資訊觀測站https://mops.twse.com.tw/mops/#/web/home
-    對於近期的股價、籌碼、重大新聞與「最新的商業模式 / 轉投資領域」，請務必嚴格依照搜尋結果填寫，切勿僅依賴舊知識（特別注意公司是否已跨足新產業，例如無人機、AI、半導體等）。
-    只有在 2021-2023 年之前的歷史財報數據確實查不到時，才可運用您的內建知識庫補齊。
-    若各界資料都完全找不到，才可標示「資訊不足」。
+    
+    【優先參考資料來源】
+    - 股價：Yahoo股市(tw.stock.yahoo.com)、鉅亨網(cnyes.com)、玩股網(wantgoo.com)
+    - 財報/毛利率/EPS：Goodinfo台灣股市資訊網(goodinfo.tw)、財報狗(statementdog.com)、CMoney(cmoney.tw)
+    - 月營收：公開資訊觀測站(mops.twse.com.tw)、CMoney
+    - 新聞：工商時報(ctee.com.tw)、經濟日報(money.udn.com)、鉅亨網
+    - 籌碼：玩股網、鉅亨網
+    
+    對於近期的股價、籌碼、重大新聞與「最新的商業模式 / 轉投資領域」，請務必嚴格依照搜尋結果填寫，切勿僅依賴舊知識。
+    財報數據（毛利率、EPS、營收）應優先從 Goodinfo、財報狗、CMoney 的搜尋結果中提取。若搜尋結果有提及具體數字，請務必使用，不可標示「資訊不足」。
+    只有在歷史財報數據搜尋結果完全沒有提到時，才可運用您的內建知識庫補齊。
+    若內建知識庫也完全沒有該筆資料，才可標示「資訊不足」。
     
     【時間基準提醒】
     本報告產出時間為 {current_year} 年。因此「近 5 年」的財報與股利數據，必須嚴格鎖定在 {past_5_yr_start} 年至 {past_5_yr_end} 年，絕對不可拿 2020 年以前的舊資料充數！若缺乏最新年度數據，請標註「資訊不足」或「預估」。
