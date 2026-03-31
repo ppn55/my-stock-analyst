@@ -396,7 +396,7 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     try:
         # 使用 OpenAI GPT-4o-mini 模型
         response = client.chat.completions.create(
-            model="minimax-m2.5",
+            model="gpt-5-mini",
             messages=[
                 {"role": "user", "content": final_prompt}
             ],
