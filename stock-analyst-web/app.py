@@ -214,7 +214,7 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     
     【極為重要：防幻覺與準確性指令】
     1. 關於「股價 (現價)」：你**必須**搜尋標題或內容中明確標示為「**收盤價**」(Close) 或「成交價」的數字。若同時出現開盤、最高、最低，請**絕對不要**採信，只能使用收盤價。請優先採信來自奇摩股市、鉅亨網、玩股網等專業媒體的數字。
-    2. 關於「日期」：請確認數據標籤為 2026 年 3 月 27 日（週五）或最近一個交易日。
+    2. 關於「日期」：本報告搜尋時間為 {recent_date_str}（{today_date}）。請在搜尋結果中找出**最近一個交易日**的收盤價，並在報告中**如實標注該數據來源的日期**（例如搜尋結果顯示「2026-03-31 收盤」就標「2026-03-31 收盤價」，顯示「2026-03-30」就標「2026-03-30 收盤價」）。**絕對不可自行推測或填寫日期**，日期必須來自搜尋結果中的明確標示。
     3. 關於「業務範圍」：嚴禁腦補或將此公司與其他相似名稱的公司混淆。**絕對不要** 提及其未在搜尋結果中明確出現的新事業（例如 AI 算力、餐飲等），除非資料中確實有提到該公司「近期轉型」且有具體進度。
     4. 若發現搜尋資料與股票代號 {keyword} 明顯不符，請在報告開頭標註「警告：搜尋資料可能存在偏移」。
     
@@ -286,6 +286,8 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     final_prompt = prompt_template.format(
         context=full_search_context, 
         date=today_date,
+        today_date=today_date,
+        recent_date_str=recent_date_str,
         current_year=current_year,
         past_5_yr_start=past_5_yr_start,
         past_5_yr_end=past_5_yr_end,
