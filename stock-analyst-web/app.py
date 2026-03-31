@@ -13,7 +13,6 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 TZ_TAIPEI = ZoneInfo("Asia/Taipei")
-
 load_dotenv()
 
 app = FastAPI()
@@ -36,7 +35,6 @@ LIMIT_PER_DAY = 20
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USAGE_FILE = os.path.join(BASE_DIR, "usage_stats.json")
 
-# ── 使用量管理（不變）──────────────────────────────────────────
 def get_real_ip(request: Request):
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
@@ -77,9 +75,8 @@ def increment_usage(ip: str):
 class AnalyzeRequest(BaseModel):
     ticker: str
 
-# ── 【優化1】Brave 搜尋：改用 async httpx ───────────────────────
+# ── 【優化1】Brave 並行搜尋 ──────────────────────────────────────
 async def brave_search_async(client_http: httpx.AsyncClient, query: str) -> str:
-    """單次非同步 Brave 搜尋"""
     url = "https://api.search.brave.com/res/v1/web/search"
     headers = {
         "Accept": "application/json",
@@ -99,15 +96,10 @@ async def brave_search_async(client_http: httpx.AsyncClient, query: str) -> str:
         return ""
 
 async def brave_search_all(queries: list[str]) -> list[str]:
-    """【優化1】所有查詢同時送出，等全部回來"""
     async with httpx.AsyncClient() as client_http:
         tasks = [brave_search_async(client_http, q) for q in queries]
         results = await asyncio.gather(*tasks)
     return list(results)
-
-# 同步包裝（供一般路由呼叫）
-def get_brave_search_results(query: str) -> str:
-    return asyncio.run(brave_search_all([query]))[0]
 
 # ── 【優化2】TWSE / TPEx 同時送出 ───────────────────────────────
 async def _fetch_twse(client_http: httpx.AsyncClient, stock_no: str, date_str: str):
@@ -154,55 +146,36 @@ async def _fetch_tpex(client_http: httpx.AsyncClient, stock_no: str, query_day):
     return None
 
 async def get_twse_closing_price_async(stock_no: str):
-    """【優化2】TWSE 和 TPEx 同時送出，取最快回來且有資料的那個"""
     now = datetime.now(TZ_TAIPEI)
     query_day = now
     while query_day.weekday() >= 5:
         query_day -= timedelta(days=1)
     date_str = query_day.strftime("%Y%m%d")
-
     async with httpx.AsyncClient() as client_http:
-        twse_task = asyncio.create_task(_fetch_twse(client_http, stock_no, date_str))
-        tpex_task = asyncio.create_task(_fetch_tpex(client_http, stock_no, query_day))
+        results = await asyncio.gather(
+            _fetch_twse(client_http, stock_no, date_str),
+            _fetch_tpex(client_http, stock_no, query_day),
+            return_exceptions=True
+        )
+    twse_result = results[0] if not isinstance(results[0], Exception) else None
+    tpex_result = results[1] if not isinstance(results[1], Exception) else None
+    return twse_result or tpex_result
 
-        # 等兩個都完成，優先用 TWSE，TWSE 沒資料再用 TPEx
-        results = await asyncio.gather(twse_task, tpex_task, return_exceptions=True)
-        twse_result = results[0] if not isinstance(results[0], Exception) else None
-        tpex_result = results[1] if not isinstance(results[1], Exception) else None
-
-    if twse_result:
-        return twse_result
-    if tpex_result:
-        return tpex_result
-    print(f"[Price] 無法取得 {stock_no} 的收盤價")
-    return None
-
-def get_twse_closing_price(stock_no: str):
-    return asyncio.run(get_twse_closing_price_async(stock_no))
-
-# ── 【優化3】get_stock_info：有4位數字直接回傳，跳過AI ──────────
+# ── 【優化3】get_stock_info：有4位數字直接跳過AI ──────────────────
 def get_stock_info(keyword: str):
-    """
-    優先從輸入直接提取 4 位數字代號。
-    有代號就直接回傳，不再呼叫 Brave + AI（省 1~3 秒）。
-    純中文輸入才 fallback 用 Brave + AI 解析。
-    """
     numbers = re.findall(r'\d{4}', keyword)
     quick_no = numbers[0] if numbers else None
 
-    # 如果有 4 位數字代號，直接把中文部分當公司名（或用代號當名稱）
     if quick_no:
-        # 去掉數字只留中文
         company_name = re.sub(r'\d+', '', keyword).strip() or quick_no
         print(f"[StockInfo] 快速解析: name={company_name}, no={quick_no}")
         return company_name, quick_no
 
-    # 純中文輸入：用 Brave 搜尋後交給 AI 解析
+    # 純中文才 fallback Brave + AI
     query = f"台股 {keyword} 股票代號 公司名稱"
-    search_context = get_brave_search_results(query)
+    search_context = asyncio.run(brave_search_all([query]))[0]
     if not search_context:
         return keyword.strip(), None
-
     try:
         sys_prompt = (
             "您是精通台股的助手。請從搜尋結果中提取：\n"
@@ -211,7 +184,7 @@ def get_stock_info(keyword: str):
             "請回傳：「代號:XXXX,名稱:公司簡稱」格式，不可加其他内容。"
         )
         response = client.chat.completions.create(
-            model="gpt-5-mini",
+            model="gemini-3-flash-preview",
             messages=[
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": f"查詢：{keyword}\n\n搜尋結果：\n{search_context}"}
@@ -267,6 +240,28 @@ async def analyze_stock(req: AnalyzeRequest, request: Request):
     company_name, stock_no = get_stock_info(keyword)
     print(f"Resolved: name={company_name}, stock_no={stock_no}, trading_day={recent_date_str}")
 
-    # Step 2: 【優化2】TWSE/TPEx 同時送出 + 【優化1】Brave 7次並行
+    # Step 2: 【優化2+1】TWSE/TPEx 與 Brave 7次搜尋同時並行
     name_ticker = f"{company_name} {keyword}"
-    queries = 
+    queries = [
+        f"公司簡介 業務範圍 經營項目 台股 {name_ticker}",
+        f"{name_ticker} 毛利率 毛利 gross margin 歷年 goodinfo.tw OR statementdog.com",
+        f"{name_ticker} EPS 每股盈餘 {past_5_yr_start} {past_5_yr_end} 財報 cmoney OR goodinfo",
+        f"{name_ticker} 年報 {past_5_yr_start}-{past_5_yr_end} 股利 配息 殖利率",
+        f"{name_ticker} 近期 新聞 {current_year} 營運 轉型 展望 工商時報 OR 經濟日報 OR 鉅亨網",
+        f"{name_ticker} 技術分析 均線 RSI 支撐壓力 {current_year}",
+        f"{name_ticker} 籌碼 外資 投信 融資 {current_year}",
+    ]
+
+    # 股價 + 所有 Brave 搜尋 全部同時送出
+    price_task = get_twse_closing_price_async(stock_no) if stock_no else asyncio.sleep(0, result=None)
+    brave_task = brave_search_all(queries)
+    price_info, brave_results = await asyncio.gather(price_task, brave_task)
+
+    # 組裝 verified price block
+    if price_info:
+        verified_price_block = (
+            f"\n【已驗證官方股價（不得覆蓋或自行修改）】\n"
+            f"收盤價：{price_info['price']}元\n"
+            f"交易日期：{price_info['date']}\n"
+            f"資料來源：{price_info['source']}\n"
+            f"【此數據來自政府官方交易所 API，為 100% 正確的收盤價，AI 必須直接
