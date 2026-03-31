@@ -112,7 +112,7 @@ def get_twse_closing_price(stock_no: str):
     若TWSE無資料(如上市前或OTC股)，再嘗試TPEx櫃買中心API。
     回傳: {"price": float, "date": str, "source": str} 或 None
     """
-    now = datetime.now()
+    now = datetime.now(TZ_TAIPEI)  # 使用台灣時區，避免夜間跨日錯誤
     # TWSE 資料通常在收盤後約15分鐘更新，若是週末則取上一個交易日
     query_day = now
     while query_day.weekday() >= 5:
@@ -249,9 +249,6 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     recent_trading_day = now
     while recent_trading_day.weekday() >= 5:  # 5=週六, 6=週日
         recent_trading_day -= timedelta(days=1)
-    recent_date_str = recent_trading_day.strftime("%Y年%-m月%-d日")  # 例：2026年3月31日
-    recent_date_str_tw = recent_trading_day.strftime("%Y-%m-%d")    # 例：2026-03-31
-    # Windows 不支援 %-m，改用 lstrip('0') 方式
     recent_date_str = f"{recent_trading_day.year}年{recent_trading_day.month}月{recent_trading_day.day}日"
     
     # 第一步：同時解析公司名稱與數字股票代號（支援純中文輸入）
