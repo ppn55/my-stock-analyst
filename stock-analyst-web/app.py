@@ -402,7 +402,7 @@ def analyze_stock(req: AnalyzeRequest, request: Request):
     
     ---
     **【投資警語】**
-    *本報告由 AI (台股全方位分析師 v2.0) 彙整網路資訊自動生成，僅供研究參考之用，不構成任何形式的投資建議、勸誘或推薦。投資行為具有風險，請審慎評估並自負投資損益。*
+    *本報告由 AI 彙整網路資訊自動生成，僅供研究參考之用，不構成任何形式的投資建議。*
     """
     final_prompt = prompt_template.format(
         context=full_search_context, 
