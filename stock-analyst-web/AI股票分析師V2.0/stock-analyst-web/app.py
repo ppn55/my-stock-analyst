@@ -1,0 +1,436 @@
+import os
+import requests
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+
+TZ_TAIPEI = ZoneInfo("Asia/Taipei")
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from openai import OpenAI
+
+# 載入環境變數
+load_dotenv()
+
+app = FastAPI()
+
+# 設定靜態檔案路由 (供網頁取得 CSS, JS, HTML)
+# Note: 確保有 static 資料夾
+if not os.path.exists("static"):
+    os.makedirs("static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+ZEABUR_AI_API_KEY = os.getenv("ZEABUR_AI_API_KEY")
+
+client = None
+if ZEABUR_AI_API_KEY:
+    # 透過 Zeabur AI Gateway 呼叫 OpenAI 模型
+    client = OpenAI(
+        api_key=ZEABUR_AI_API_KEY,
+        base_url="https://hnd1.aihub.zeabur.ai/"
+    )
+
+# 限制設定
+LIMIT_PER_DAY = 5
+# 使用絕對路徑以確保在不同啟動目錄下都能正確讀取
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USAGE_FILE = os.path.join(BASE_DIR, "usage_stats.json")
+
+def get_real_ip(request: Request):
+    # 優先從 Zeabur 代理讀取真實用戶 IP
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        # X-Forwarded-For 可能包含多個 IP，取第一個真實位址
+        return forwarded.split(",")[0].strip()
+    return request.client.host
+
+def get_usage_db():
+    try:
+        if not os.path.exists(USAGE_FILE):
+            # 初始化空檔案
+            with open(USAGE_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
+        with open(USAGE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"Error loading usage DB: {e}")
+        return {}
+
+def save_usage_db(db):
+    with open(USAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump(db, f, indent=4, ensure_ascii=False)
+
+def get_usage(ip: str):
+    today = datetime.now(TZ_TAIPEI).strftime("%Y-%m-%d")  # 台灣時間
+    db = get_usage_db()
+    day_data = db.get(today, {})
+    return day_data.get(ip, 0)
+
+def increment_usage(ip: str):
+    print(f"Incrementing usage for IP: {ip}")
+    today = datetime.now(TZ_TAIPEI).strftime("%Y-%m-%d")  # 台灣時間
+    db = get_usage_db()
+    if today not in db:
+        db[today] = {}
+    db[today][ip] = db[today].get(ip, 0) + 1
+    save_usage_db(db)
+
+class AnalyzeRequest(BaseModel):
+    ticker: str
+
+def get_search_results(query: str):
+    """透過 Serper.dev 取得 Google 搜尋結果摘要"""
+    url = "https://google.serper.dev/search"
+    payload = json.dumps({
+        "q": query,
+        "gl": "tw",         # 國家: 台灣
+        "hl": "zh-tw",      # 語言: 繁體中文
+        "num": 5            # 取得前 5 筆結果
+    })
+    headers = {
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        results_text = ""
+        for item in data.get('organic', [])[:5]:
+            title = item.get('title', '')
+            snippet = item.get('snippet', '')
+            results_text += f"[標題]: {title}\n[內容]: {snippet}\n---\n"
+        return results_text
+    except Exception as e:
+        print(f"Serper API Error on query '{query}': {e}")
+        return ""
+
+def get_twse_closing_price(stock_no: str):
+    """
+    直接從台灣證交所(TWSE)官方API取得當日收盤價。
+    若TWSE無資料(如上市前或OTC股)，再嘗試TPEx櫃買中心API。
+    回傳: {"price": float, "date": str, "source": str} 或 None
+    """
+    now = datetime.now(TZ_TAIPEI)  # 使用台灣時區，避免夜間跨日錯誤
+    # TWSE 資料通常在收盤後約15分鐘更新，若是週末則取上一個交易日
+    query_day = now
+    while query_day.weekday() >= 5:
+        query_day -= timedelta(days=1)
+    
+    date_str = query_day.strftime("%Y%m%d")   # TWSE 格式：20260331
+    date_display = query_day.strftime("%Y-%m-%d")
+
+    # --- 嘗試 TWSE 上市股票 ---
+    try:
+        twse_url = (
+            f"https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+            f"?response=json&stockNo={stock_no}&date={date_str}"
+        )
+        r = requests.get(twse_url, timeout=10,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        data = r.json()
+        rows = data.get("data", [])
+        if rows:
+            # 最後一筆是最新交易日，欄位: 日期/成交股數/成交金額/開盤/最高/最低/收盤/漲跌/成交筆數
+            last_row = rows[-1]
+            close_price = float(last_row[6].replace(",", ""))
+            trade_date_raw = last_row[0]   # 民國年，例：115/03/31
+            # 轉換民國年 → 西元年
+            parts = trade_date_raw.split("/")
+            trade_date = f"{int(parts[0]) + 1911}-{parts[1]}-{parts[2]}"
+            print(f"[TWSE] {stock_no} 收盤價: {close_price} ({trade_date})")
+            return {"price": close_price, "date": trade_date, "source": "台灣證交所(TWSE)"}
+    except Exception as e:
+        print(f"[TWSE] Error for {stock_no}: {e}")
+
+    # --- 嘗試 TPEx 上櫃股票 ---
+    try:
+        tpex_date = f"{query_day.year - 1911}/{query_day.strftime('%m/%d')}"  # 民國年
+        tpex_url = (
+            f"https://www.tpex.org.tw/web/stock/aftertrading/daily_trading_info/st43_result.php"
+            f"?l=zh-tw&d={tpex_date}&stkno={stock_no}&_=1"
+        )
+        r = requests.get(tpex_url, timeout=10,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        data = r.json()
+        rows = data.get("aaData", [])
+        if rows:
+            last_row = rows[-1]
+            close_price = float(last_row[6].replace(",", ""))
+            trade_date_raw = last_row[0]
+            parts = trade_date_raw.split("/")
+            trade_date = f"{int(parts[0]) + 1911}-{parts[1]}-{parts[2]}"
+            print(f"[TPEx] {stock_no} 收盤價: {close_price} ({trade_date})")
+            return {"price": close_price, "date": trade_date, "source": "櫃買中心(TPEx)"}
+    except Exception as e:
+        print(f"[TPEx] Error for {stock_no}: {e}")
+
+    print(f"[Price] 無法取得 {stock_no} 的收盤價")
+    return None
+
+def get_stock_info(keyword: str):
+    """
+    同時解析「公司簡稱」與「4位數字股票代號」。
+    支援仿入：「中光電」/ 「5371」 / 「5371 中光電」 等幾種格式。
+    回傳: (company_name: str, stock_no: str | None)
+    """
+    import re as _re
+    # 先嘗試直接從輸入提取 4 位數字代號
+    numbers = _re.findall(r'\d{4}', keyword)
+    quick_no = numbers[0] if numbers else None
+
+    query = f"台股 {keyword} 股票代號 公司名稱"
+    search_context = get_search_results(query)
+
+    if not search_context and quick_no:
+        return keyword.strip(), quick_no
+    if not search_context:
+        return keyword.strip(), None
+
+    try:
+        sys_prompt = (
+            "您是精通台股的助手。請從搜尋結果中提取：\n"
+            "1. 公司簡稱（中文，例：中光電、台積電）\n"
+            "2. 4位數字股票代號（例：5371、2330）\n"
+            "請回傳：「代號:XXXX,名稱:公司簡稱」格式，不可加其他内容。"
+        )
+        response = client.chat.completions.create(
+            model="gemini-3-flash-preview",
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": f"查詢：{keyword}\n\n搜尋結果：\n{search_context}"}
+            ],
+            temperature=0,
+            max_tokens=30
+        )
+        result = response.choices[0].message.content.strip()
+        print(f"[StockInfo] AI result: {result}")
+        code_match = _re.search(r'代號[\uff1a:]+\s*(\d{4})', result)
+        name_match = _re.search(r'名稱[\uff1a:]+\s*([^\s,，]+)', result)
+        stock_no = code_match.group(1) if code_match else quick_no
+        company_name = name_match.group(1) if name_match else keyword.strip()
+        print(f"[StockInfo] name={company_name}, no={stock_no}")
+        return company_name, stock_no
+    except Exception as e:
+        print(f"[StockInfo] Error: {e}")
+        return keyword.strip(), quick_no
+
+@app.get("/")
+def serve_frontend():
+    return FileResponse("index.html")
+
+@app.get("/api/limit-status")
+def get_limit_status(request: Request):
+    ip = get_real_ip(request)
+    print(f"Checking limit for real IP: {ip}")
+    count = get_usage(ip)
+    return {"limit": LIMIT_PER_DAY, "used": count, "remaining": max(0, LIMIT_PER_DAY - count)}
+
+@app.post("/api/analyze")
+def analyze_stock(req: AnalyzeRequest, request: Request):
+    ip = get_real_ip(request)
+    print(f"Analyzing for real IP: {ip}")
+    
+    used = get_usage(ip)
+    if used >= LIMIT_PER_DAY:
+        raise HTTPException(status_code=429, detail=f"您今日的分析次數已達上限 ({LIMIT_PER_DAY} 次)，請明天再試。")
+        
+    if not SERPER_API_KEY or not ZEABUR_AI_API_KEY:
+        raise HTTPException(status_code=500, detail="API Keys 未設定齊全，請檢查您 Zeabur 中的 Variables (需要 SERPER_API_KEY 與 ZEABUR_AI_API_KEY)。")
+        
+    keyword = req.ticker
+    now = datetime.now(TZ_TAIPEI)  # 台灣時間
+    today_date = now.strftime("%Y-%m-%d")
+    current_year = now.year
+    past_5_yr_start = current_year - 5
+    past_5_yr_end = current_year - 1
+
+    # 計算最近的交易日（週一到週五）
+    recent_trading_day = now
+    while recent_trading_day.weekday() >= 5:  # 5=週六, 6=週日
+        recent_trading_day -= timedelta(days=1)
+    recent_date_str = f"{recent_trading_day.year}年{recent_trading_day.month}月{recent_trading_day.day}日"
+    
+    # 第一步：同時解析公司名稱與數字股票代號（支援純中文輸入）
+    company_name, stock_no = get_stock_info(keyword)
+    print(f"Resolved: name={company_name}, stock_no={stock_no}, trading_day={recent_date_str}")
+
+    # 第二步：並行執行 TWSE 股價查詢 + 全部 Brave Search（最大效能改善點）
+    name_ticker = f"{company_name} {keyword}"
+    queries = [
+        f"公司簡介 業務範圍 經營項目 台股 {name_ticker}",
+        f"{name_ticker} 營收動能 ROE 杜邦分析 自由現金流 goodinfo.tw OR statementdog.com",
+        f"{name_ticker} EPS 每股盈餘 毛利率 {past_5_yr_start} {past_5_yr_end} 財報 cmoney OR goodinfo",
+        f"{name_ticker} 年報 {past_5_yr_start}-{past_5_yr_end} 股利 配息 殖利率",
+        f"{name_ticker} 近期 新聞 {current_year} 營運 轉型 展望 工商時報 OR 經濟日報 OR 鉅亨網",
+        f"{name_ticker} 技術分析 均線排列 KD MACD RSI 支撐壓力 {current_year}",
+        f"{name_ticker} 籌碼 外資連買 投信 大股東 融資 {current_year}"
+    ]
+
+    # 建立並行任務：[TWSE 買價, search_q0, search_q1, ...]
+    def fetch_search(q):
+        return q, get_search_results(q)
+
+    import time
+    t0 = time.time()
+    search_results = {}   # q -> 結果文字
+    price_info = None
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        # 同時提交 TWSE 買價 + 全部搜尋
+        future_price = executor.submit(get_twse_closing_price, stock_no) if stock_no else None
+        future_searches = {executor.submit(fetch_search, q): q for q in queries}
+
+        # 收集搜尋結果
+        for future in as_completed(future_searches):
+            q, result = future.result()
+            search_results[q] = result
+
+        # 收集買價結果
+        if future_price:
+            try:
+                price_info = future_price.result()
+            except Exception as e:
+                print(f"[Price future] Error: {e}")
+
+    print(f"[Perf] Parallel fetch done in {time.time()-t0:.1f}s")
+
+    if price_info:
+        verified_price_block = (
+            f"\n【已驗證官方股價（不得覆蓋或自行修改）】\n"
+            f"收盤價：{price_info['price']}元\n"
+            f"交易日期：{price_info['date']}\n"
+            f"資料來源：{price_info['source']}\n"
+            f"【此數據來自政府官方交易所 API，為 100% 正確的收盤價，AI 必須直接使用，絕對不得替換成其他數字】\n"
+        )
+    else:
+        verified_price_block = "\n【官方股價查詢失敗，請從搜尋結果中判斷最新收盤價】\n"
+
+    # 依原始 queries 順序整合搜尋結果
+    full_search_context = verified_price_block
+    for q in queries:
+        full_search_context += f"【搜尋關鍵字：{q}】\n"
+        full_search_context += search_results.get(q, "") + "\n"
+        
+    # AI 報告模板 Prompt
+    prompt_template = """
+    您是一位專業且極具獨立批判性的資深台股分析師。請主要依據「網路搜尋資料」來評估該公司的商業模式、近期轉型與最新動態。
+    
+    【優先參考資料來源】
+    - 股價：Yahoo股市(tw.stock.yahoo.com)、鉅亨網(cnyes.com)、玩股網(wantgoo.com)
+    - 財報/毛利率/EPS：Goodinfo台灣股市資訊網(goodinfo.tw)、財報狗(statementdog.com)、CMoney(cmoney.tw)
+    - 月營收：公開資訊觀測站(mops.twse.com.tw)、CMoney
+    - 新聞：工商時報(ctee.com.tw)、經濟日報(money.udn.com)、鉅亨網
+    - 籌碼：玩股網、鉅亨網
+    
+    對於近期的股價、籌碼、重大新聞與「最新的商業模式 / 轉投資領域」，請務必嚴格依照搜尋結果填寫，切勿僅依賴舊知識。
+    財報數據（毛利率、EPS、營收）應優先從 Goodinfo、財報狗、CMoney 的搜尋結果中提取。若搜尋結果有提及具體數字，請務必使用，不可標示「資訊不足」。
+    只有在歷史財報數據搜尋結果完全沒有提到時，才可運用您的內建知識庫補齊。
+    若內建知識庫也完全沒有該筆資料，才可標示「資訊不足」。
+    
+    【時間基準提醒】
+    本報告產出時間為 {current_year} 年。因此「近 5 年」的財報與股利數據，必須嚴格鎖定在 {past_5_yr_start} 年至 {past_5_yr_end} 年，絕對不可拿 2020 年以前的舊資料充數！若缺乏最新年度數據，請標註「資訊不足」或「預估」。
+    
+    【極為重要：防幻覺與準確性指令】
+    1. 關於「股價 (現價)」：**必須直接使用【已驗證官方股價】區塊中的數据**，該數據來自政府交易所官方 API，為最正確的數字。不得替換成搜尋結果中出現的其他數字。
+    2. 關於「日期」：本報告搜尋時間為 {recent_date_str}（{today_date}）。報告中一律使用【已驗證官方股價】區塊中的日期，不可自行推測或填寫日期。
+    3. 關於「業務範圍」：嚴禁腦補或將此公司與其他相似名稱的公司混淆。**絕對不要** 提及其未在搜尋結果中明確出現的新事業（例如 AI 算力、餐飲等），除非資料中確實有提到該公司「近期轉型」且有具體進度。
+    4. 若發現搜尋資料與股票代號 {keyword} 明顯不符，請在報告開頭標註「警告：搜尋資料可能存在偏移」。
+    
+    【搜尋資料】：
+    (報告基準日：{date})
+    {context}
+    
+    【報告格式要求 (嚴格遵守以下 markdown 標籤格式並產出結構化表格)】：
+    ### 1. 基本資訊 (資料日期：{date})
+    - **股票**：[代號] [名稱] | **產業**：[產業]
+    - **現價**：[價格]元 | **市值**：[市值]
+    - **股本**：[股本]元
+    
+    ### 2. 執行摘要 (Executive Summary)
+    - **論點**：說明看好/看淡核心理由
+    - **綜合評級**：[買進/持有/賣出/觀望]
+    - **目標價**：[低]–[高]元
+    
+    ### 3. 公司產業與最新動態
+    - **商業模式**、主要客戶、競爭對手
+    - **產業護城河評估**：成本優勢/轉換成本/無形資產/網路效應
+    - **近期新聞與轉機**：摘要近一個月的重大消息與營運影響
+    
+    ### 4. 基本面分析 (Fundamental Analysis)
+    - **獲利能力**：近5年毛利率、營益率、淨利率走勢與ROE杜邦分析。
+    - **營收動能**：近4季或最新月營收YoY、MoM變化。
+    - **財務表**（近5年：{past_5_yr_start}~{past_5_yr_end}）
+    | 年度 | 營收 | 毛利% | EPS | 現金股利 | 殖利率 |
+    *(觀察：配發穩定性與獲利品質變化)*
+    
+    ### 5. 籌碼面分析 (Chip Flow Analysis)
+    | 面向 | 狀況描述 | 評分 (正面/中性/負面) |
+    |:---|:---|:---:|
+    | 外資動向 | [描述] | [評分] |
+    | 投信動向 | [描述] | [評分] |
+    | 融資融券 | [描述] | [評分] |
+    | 大股東/主力 | [描述] | [評分] |
+    **籌碼面整體結論**：[多/中性/空]
+    
+    ### 6. 技術面分析 (Technical Analysis)
+    | 指標 | 目前狀況 | 訊號 (多/中/空) |
+    |:---|:---|:---:|
+    | 均線排列 | [描述] | [訊號] |
+    | KD 指標 | [描述] | [訊號] |
+    | MACD / RSI | [描述] | [訊號] |
+    **技術面整體結論**：[多/中性/空]。
+    - **支撐位**：[短期支撐]、[長期支撐]
+    - **壓力位**：[短期壓力]、[波段壓力]
+    
+    ### 7. 交易計畫與核心風險
+    - **買點建議**：
+    - **停損防守**：
+    - **獲利目標**：
+    - **[🔴紅燈/🟡黃燈/🟢綠燈] 核心風險 1**：說明事件與影響
+    - **[🔴紅燈/🟡黃燈/🟢綠燈] 核心風險 2**：說明事件與影響
+    
+    ---
+    **【投資警語】**
+    *本報告由 AI (台股全方位分析師 v2.0) 彙整網路資訊自動生成，僅供研究參考之用，不構成任何形式的投資建議、勸誘或推薦。投資行為具有風險，請審慎評估並自負投資損益。*
+    """
+    final_prompt = prompt_template.format(
+        context=full_search_context, 
+        date=today_date,
+        today_date=today_date,
+        recent_date_str=recent_date_str,
+        current_year=current_year,
+        past_5_yr_start=past_5_yr_start,
+        past_5_yr_end=past_5_yr_end,
+        keyword=keyword
+    )
+    
+    try:
+        # 使用 OpenAI GPT-4o-mini 模型
+        response = client.chat.completions.create(
+            model="gemini-3-flash-preview",
+            messages=[
+                {"role": "user", "content": final_prompt}
+            ],
+            temperature=0.7
+        )
+        # 成功完成後，增加使用次數
+        increment_usage(ip)
+        return {"markdown": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
